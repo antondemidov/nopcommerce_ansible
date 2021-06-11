@@ -1,0 +1,114 @@
+---
+
+- name: Install prerequisites
+  apt: name=aptitude update_cache=yes state=latest force_apt_get=yes
+  tags: [ system ]
+
+- name: Install packages
+  apt: name={{ item }} update_cache=yes state=latest
+  loop: [ 'xz-utils', 'python3-certbot-nginx', 'apt-transport-https', 'mysql-server', 'python3-pymysql', 'nginx', 'unzip', 'libgdiplus']
+  tags: [ system ]
+
+- name: Install Microsoft key and feed
+  apt:
+    deb: https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb 
+  tags: [ system ]
+
+- name: Install .NET Core Runtime
+  apt:
+    name: "aspnetcore-runtime-3.1"
+    update_cache: yes
+    state: present
+   
+
+  # MySQL Configuration
+- name: Set the root password
+  mysql_user:
+    name: root
+    password: "{{ mysql_root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  tags: [ mysql, mysql-root ]
+
+- name: Remove all anonymous user accounts
+  mysql_user:
+    name: ''
+    host_all: yes
+    state: absent
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+  tags: [ mysql ]
+
+- name: Remove the MySQL test database
+  mysql_db:
+    name: test
+    state: absent
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+  tags: [ mysql ]
+
+- name: Create document root
+  file:
+    path: "/var/www/{{ item }}"
+    state: directory
+    owner: "www-data"
+    group: "www-data"
+    mode: '0755'
+  loop: "{{ http_envs }}"
+  tags: [ nginx ]
+
+- name: Download and unpack nopcommerce
+  unarchive:
+    src: https://github.com/nopSolutions/nopCommerce/releases/download/release-{{ nop_version }}/nopCommerce_{{ nop_version }}_NoSource_linux_x64.zip
+    dest: "/var/www/{{ item }}"
+    remote_src: yes
+    owner: "www-data"
+    group: "www-data"
+  loop: "{{ http_envs }}"
+  tags: [ nopcommerce ]
+
+- name: Create bin dir
+  file:
+    path: "/var/www/{{ item }}/bin"
+    state: directory
+    owner: "www-data"
+    group: "www-data"
+    mode: '0755'
+  loop: "{{ http_envs }}"
+  tags: [ nginx ]
+
+- name: Create logs dir
+  file:
+    path: "/var/www/{{ item }}/logs"
+    state: directory
+    owner: "www-data"
+    group: "www-data"
+    mode: '0755'
+  loop: "{{ http_envs }}"
+  tags: [ nginx ]
+
+- name: Set up NopCommerce service
+  template:
+    src: "files/nopCommerce.service.j2"
+    dest: "/etc/systemd/system/{{ item }}.service"
+  loop: "{{ http_envs }}"
+
+- name: Set up Nginx hosts
+  template:
+    src: "files/nginx.conf.j2"
+    dest: "/etc/nginx/sites-enabled/{{ item }}.{{ domain }}.conf"
+  notify: Reload Nginx
+  loop: "{{ http_envs }}"
+  tags: [ nginx ]
+
+- name: Disable the default site
+  file:
+    path: "/etc/nginx/sites-enabled/default"
+    state: absent
+  notify: Reload Nginx
+
+- name: start NopCommerce service
+  systemd:
+    name: "{{ item }}"
+    daemon_reload: yes
+    state: started
+  loop: "{{ http_envs }}"

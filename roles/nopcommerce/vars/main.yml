@@ -1,0 +1,12 @@
+---
+# MySQL Settings
+mysql_root_password: "SECRET"
+
+# Virtual env
+http_envs: ['nopcommerce-dev']
+
+# Nopcommerce Version
+nop_version: "4.40.3"
+
+# Domain
+domain: "example.com"
